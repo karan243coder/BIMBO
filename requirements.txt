@@ -1,0 +1,44 @@
+# BIMBO URL Bot
+# Powered by BIMBO
+# Support: @Bimbo69
+
+# ============================================================
+# IMPORTANT: yt-dlp pinned to GitHub master (nightly-equivalent)
+# Reason: site extractors break weekly (e.g. xhamster KeyError
+# 'videoModel'). Master branch gets fixes within hours, while
+# stable releases lag by weeks. Keep this pin unless something
+# breaks — then pin to a specific commit/tag.
+# ============================================================
+yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.tar.gz
+
+# Core Telegram bot stack
+pyrogram==2.0.106
+tgcrypto==1.2.5
+
+# Async HTTP / files
+aiohttp==3.14.1
+aiofiles==25.1.0
+
+# MongoDB driver
+motor==3.7.1
+dnspython==2.8.0
+
+# Image / metadata processing
+Pillow==12.2.0
+numpy==2.4.6
+hachoir==3.3.0
+olefile==0.47
+
+# HTML / parsing
+beautifulsoup4==4.15.0
+
+# Misc
+requests==2.34.2
+pytz==2026.2
+
+# Web server (used by app.py for the HTTP download endpoint)
+Flask==3.1.3
+gunicorn==26.0.0
+Jinja2==3.1.6
+werkzeug==3.1.8
+itsdangerous==2.2.0
