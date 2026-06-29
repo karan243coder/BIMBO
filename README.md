@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://graph.org/file/d57d6f83abb6b8d0efb02.jpg" alt="BIMBO-URL-UPLOADER-BOT Logo">
+  <img src="https://kommodo.ai/i/irLJ6PKqPzId0ecARVr4" alt="BIMBO-URL-UPLOADER-BOT Logo">
 </p>
 <h1 align="center">
   BIMBO URL UPLOADER BOT
