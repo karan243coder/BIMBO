@@ -90,7 +90,7 @@ def _find_video_links(html_text: str):
 def _extract_video_cards(html_text: str, base_domain: str):
     videos = []
     links = _find_video_links(html_text)
-    for rel_url in links[:30]:  # Check first 30 links
+    for rel_url in links:  # NO CAP - show ALL videos found
         full_url = f"{base_domain}{rel_url}" if not rel_url.startswith("http") else rel_url
         # Get snippet around the link
         pos = html_text.find(rel_url)

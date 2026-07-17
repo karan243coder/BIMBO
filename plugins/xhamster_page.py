@@ -60,7 +60,7 @@ def _find_video_links(html_text: str):
             rel = m.group(1)
             if rel not in links:
                 links.append(rel)
-    return links[:30]
+    return links  # NO CAP - return ALL video links
 
 
 def _extract_video_cards(html_text: str, base_domain: str):
