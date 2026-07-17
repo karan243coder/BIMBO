@@ -186,7 +186,7 @@ def build_profile_keyboard(results: dict, user_id: str = None):
         pag_buttons = build_pagination_buttons(pagination, results.get('original_url', ''), 'profile', user_id)
         # pag_buttons is InlineKeyboardMarkup; append its rows
         for row in pag_buttons.inline_keyboard:
-            pagination_rows.extend(row)
+            pagination_rows.append(row)
     if pagination_rows:
         keyboard.extend(pagination_rows)
     
@@ -1323,23 +1323,26 @@ async def download_all_callback(bot, update):
                 loop = asyncio.get_event_loop()
                 xh = await loop.run_in_executor(None, xh_extract, video_url, cookies_path)
                 if xh and xh.get("qualities"):
+                    # Select max quality for download all
+                    best_q = sorted(xh.get("qualities", []), key=lambda q: int(q.get("height", 0)), reverse=True)[0]
+                    best_height = int(best_q.get("height", 720))
+                    best_m3u8 = best_q.get("m3u8", "")
                     xh_json = {
                         "title": xh.get("title") or "xHamster video",
                         "fulltitle": xh.get("title") or "xHamster video",
                         "duration": xh.get("duration"),
                         "_xhamster": True,
-                        "xh_qualities": {str(q["height"]): q["m3u8"] for q in xh["qualities"]},
+                        "xh_qualities": {str(best_height): best_m3u8},
                         "xh_headers": xh.get("headers") or {},
+                        "download_all_best": True,
                     }
                     os.makedirs(Config.BIMBO_DOWNLOAD_LOCATION, exist_ok=True)
                     save_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION, f"{update.from_user.id}.json")
                     with open(save_path, "w", encoding="utf8") as f:
                         json.dump(xh_json, f, ensure_ascii=False)
-                    # Send quality selection for this video (simplified: send first best quality)
                     await bot.send_message(
                         chat_id=update.from_user.id,
-                        text=f" **🎯 Video {idx+1} - Choose Quality**\\n**✅ xHamster engine active**\\n**Progress:** ⚡ Downloading | 📦 Processing | ⏳ ETA calculating | 🕒 Starting...",
-                        reply_markup=build_xhamster_keyboard_from_engine(xh),
+                        text=f" **📥 Video {idx+1}/{len(unique_videos)} - Max Quality: {best_height}p**\\n**⚡ Speed:** ... | **📦 Progress:** ... | **⏳ ETA:** ... | **🕒 Elapsed:** ...",
                         parse_mode=enums.ParseMode.HTML,
                     )
                 else:
