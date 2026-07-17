@@ -65,16 +65,17 @@ def _is_profile_url(url: str) -> bool:
 def _find_video_links(html_text: str):
     """Broad regex to find ANY video link in HTML."""
     videos = []
-    # Pattern 1: /videos/NUMBER followed by anything (broad)
-    matches = re.finditer(r'href=["\'](/videos/\d+[^"\'\s<>]*?)["\']', html_text, re.IGNORECASE)
+    # Use working regex that matches both absolute and relative video links
+    matches = re.finditer(r'href=["\']([^"\'\s<>]+/videos/[^"\'\s<>]+)["\']', html_text, re.IGNORECASE)
     for m in matches:
         rel = m.group(1)
-        videos.append(rel)
-    # Pattern 2: /videos/NUMBER/title with dashes/slashes
-    matches2 = re.finditer(r'href=["\'](/videos/[0-9]+/[^"\'\s<>]+?)["\']', html_text, re.IGNORECASE)
-    for m in matches2:
-        rel = m.group(1)
-        if rel not in videos:
+        # Filter out non-video links (e.g., creators/videos/)
+        if rel.startswith("http"):
+            # Absolute URL - keep only if it contains /videos/ and isn't a profile
+            if "/videos/" in rel and not any(x in rel for x in ("/creators/", "/channels/", "/user/", "/profile/")):
+                videos.append(rel)
+        else:
+            # Relative URL
             videos.append(rel)
     # Deduplicate
     seen = set()
@@ -95,7 +96,7 @@ def _extract_video_cards(html_text: str, base_domain: str):
         pos = html_text.find(rel_url)
         if pos < 0:
             pos = html_text.find('href="' + rel_url)
-        snippet = html_text[max(0, pos-600):pos+600] if pos >= 0 else html_text[:1200]
+        snippet = html_text[max(0, pos-1000):pos+1200] if pos >= 0 else html_text[:2000]
         
         # Title extraction - very broad
         title = "xHamster Video"
@@ -160,7 +161,7 @@ def _extract_video_cards(html_text: str, base_domain: str):
                 "duration_sec": duration_sec,
                 "label": f"{title[:40]} | ⏱ {duration_str}" if len(title) <= 40 else f"{title[:35]}... | ⏱ {duration_str}",
             })
-    return videos[:20]
+    return videos  # Show up to 50 videos; pagination handles rest for profile/page
 
 
 def _find_pagination(html_text: str, base_url: str):
@@ -235,6 +236,9 @@ async def scrape_profile(url: str, cookies_path: str = None):
             "DNT": "1",
         }
         resp = session.get(clean_url, headers=headers, cookies=cookies, timeout=30)
+        # If cookies cause 400/403, retry without cookies
+        if resp.status_code in (400, 403, 401):
+            resp = session.get(clean_url, headers=headers, cookies={}, timeout=30)
         resp.raise_for_status()
         html_text = resp.text
         videos = _extract_video_cards(html_text, base_domain)

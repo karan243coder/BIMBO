@@ -420,7 +420,7 @@ async def _extract_profile_videos_yt_dlp(url: str, cookies_path: str = None):
             if v["url"] not in seen:
                 seen.add(v["url"])
                 unique.append(v)
-        return unique[:20], pagination := {"next": None, "prev": None, "has_more": False}
+        return unique[:20], {"next": None, "prev": None, "has_more": False}
     except Exception as e:
         logger.error(f"yt-dlp flat-playlist error: {e}")
         return [], {"next": None, "prev": None, "has_more": False}
@@ -938,19 +938,39 @@ async def pagination_callback(bot, update):
             await update.message.delete(True)
             # Send new message with new results
             try:
-                page_result = await scrape_page(nav_url, "cookies.txt" if os.path.exists("cookies.txt") else None)
-                videos = page_result.get("videos", [])
+                # Detect profile vs page vs search for pagination
+                if is_xhamster_profile(nav_url):
+                    result = await scrape_profile(nav_url, "cookies.txt" if os.path.exists("cookies.txt") else None)
+                    keyboard_builder = build_profile_keyboard
+                    text_prefix = "🎯 Profile Results"
+                elif is_xhamster_search(nav_url) or "/search/" in nav_url:
+                    result = await search_videos(nav_url, cookies_path="cookies.txt" if os.path.exists("cookies.txt") else None)
+                    keyboard_builder = build_search_keyboard
+                    text_prefix = "🔍 Search Results"
+                else:
+                    result = await scrape_page(nav_url, "cookies.txt" if os.path.exists("cookies.txt") else None)
+                    keyboard_builder = build_page_keyboard
+                    text_prefix = "🎯 Page Results"
+                videos = result.get("videos", [])
                 if videos:
                     await bot.send_message(
                         chat_id=update.from_user.id,
-                        text=f" **🎯 Page Results**\\n**📊 Found:** {len(videos)} videos\\n**▶️ Use Next/Prev to navigate**",
-                        reply_markup=build_page_keyboard(page_result),
+                        text=f" **{text_prefix}**\\n**📊 Found:** {len(videos)} videos\\n**▶️ Use Next/Prev to navigate**",
+                        reply_markup=keyboard_builder(result),
                         parse_mode=enums.ParseMode.HTML,
                     )
                 else:
+                    # Use appropriate keyboard even for empty results
+                    if is_xhamster_profile(nav_url):
+                        keyboard_builder = build_profile_keyboard
+                    elif is_xhamster_search(nav_url) or "/search/" in nav_url:
+                        keyboard_builder = build_search_keyboard
+                    else:
+                        keyboard_builder = build_page_keyboard
                     await bot.send_message(
                         chat_id=update.from_user.id,
                         text=" **❌ No videos on this page.**",
+                        reply_markup=keyboard_builder({"videos": [], "pagination": {"next": None, "prev": None}, "original_url": nav_url, "search_url": nav_url}),
                         parse_mode=enums.ParseMode.HTML,
                     )
             except Exception as nav_err:

@@ -52,8 +52,8 @@ def _find_video_links(html_text: str):
     links = []
     # Broad patterns for video links
     patterns = [
-        r'href=["\'](/videos/\d+[^"\'\s<>]*?)["\']',
-        r'href=["\'](/videos/[0-9]+/[^"\'\s<>]+?)["\']',
+        r'href=["\'](/videos/[a-zA-Z0-9_-]+[^"\'\s<>]*?)["\']',
+        r'href=["\'](/videos/[a-zA-Z0-9_-]+/[^"\'\s<>]+?)["\']',
     ]
     for pat in patterns:
         for m in re.finditer(pat, html_text, re.IGNORECASE):
@@ -137,7 +137,7 @@ def _extract_video_cards(html_text: str, base_domain: str):
         if v["url"] not in seen:
             seen.add(v["url"])
             unique.append(v)
-    return unique[:20]
+    return unique  # More videos per page; pagination handles rest
 
 
 def _find_pagination(html_text: str, base_url: str):
@@ -197,6 +197,9 @@ async def scrape_page(url: str, cookies_path: str = None):
             "Connection": "keep-alive",
         }
         resp = session.get(clean_url, headers=headers, cookies=cookies, timeout=30)
+        # If cookies cause 400/403, retry without cookies
+        if resp.status_code in (400, 403, 401):
+            resp = session.get(clean_url, headers=headers, cookies={}, timeout=30)
         resp.raise_for_status()
         html_text = resp.text
         videos = _extract_video_cards(html_text, base_domain)

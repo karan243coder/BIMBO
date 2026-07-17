@@ -48,7 +48,7 @@ def _build_search_url(query: str, base_domain: str = None) -> str:
 def _extract_search_results(html_text: str, base_domain: str, base_search_url: str):
     videos = []
     url_matches = re.finditer(
-        r'href=["\'](/videos/\d+[^"\'\s<>]+)["\']',
+        r'href=["\']((?:https?://[^/]+)?/videos/[a-zA-Z0-9_-][^"\'\s<>]*?)["\']',
         html_text,
         re.IGNORECASE
     )
@@ -56,16 +56,25 @@ def _extract_search_results(html_text: str, base_domain: str, base_search_url: s
         relative_url = m.group(1)
         full_url = f"{base_domain}{relative_url}" if not relative_url.startswith("http") else relative_url
         pos = m.start()
-        snippet = html_text[max(0, pos-500):pos+500]
+        snippet = html_text[max(0, pos-1000):pos+1200]
         
         title = "xHamster Video"
-        title_candidates = re.findall(
-            r'<[^>]+class=["\'][^"\']*(?:video-title|title|name)[^"\']*["\'][^>]*>([^<]{5,120})',
+        # Try alt/title near video link first
+        title_match = re.search(
+            r'<[^>]+(?:alt|title)=["\']([^"\']{3,120})["\']',
             snippet,
             re.IGNORECASE
         )
-        if title_candidates:
-            title = html.unescape(title_candidates[0]).strip()
+        if title_match:
+            title = html.unescape(title_match.group(1)).strip()
+        else:
+            title_candidates = re.findall(
+                r'<[^>]+class=["\'][^"\']*(?:video-title|title|name)[^"\']*["\'][^>]*>([^<]{5,120})',
+                snippet,
+                re.IGNORECASE
+            )
+            if title_candidates:
+                title = html.unescape(title_candidates[0]).strip()
         
         duration_str = "0:00"
         duration_sec = 0
@@ -104,7 +113,7 @@ def _extract_search_results(html_text: str, base_domain: str, base_search_url: s
         if v["url"] not in seen:
             seen.add(v["url"])
             unique.append(v)
-    return unique[:20]
+    return unique  # More videos; pagination for rest
 
 
 def _find_pagination_search(html_text: str, base_url: str, base_domain: str):
@@ -126,8 +135,14 @@ def _find_pagination_search(html_text: str, base_url: str, base_domain: str):
 
 
 async def search_videos(query: str, cookies_path: str = None, base_domain: str = None):
-    base_domain = base_domain or "https://xhamster.com"
-    url = _build_search_url(query, base_domain)
+    # If query is already a full URL, use it directly
+    if isinstance(query, str) and query.startswith("http"):
+        url = query
+        base_domain_from_url = urlparse(query).scheme + "://" + (urlparse(query).hostname or "xhamster.com")
+        base_domain = base_domain or base_domain_from_url
+    else:
+        base_domain = base_domain or "https://xhamster.com"
+        url = _build_search_url(query, base_domain)
     try:
         session = requests.Session()
         headers = {
@@ -135,7 +150,21 @@ async def search_videos(query: str, cookies_path: str = None, base_domain: str =
             "Referer": base_domain,
             "Accept": "text/html",
         }
-        resp = session.get(url, headers=headers, timeout=25)
+        cookies = {}
+        if cookies_path and __import__('os').path.exists(cookies_path):
+            try:
+                with open(cookies_path, "r") as f:
+                    for line in f:
+                        if not line.startswith('#') and line.strip() and '\t' in line:
+                            parts = line.strip().split('\t')
+                            if len(parts) >= 7:
+                                cookies[parts[5]] = parts[6]
+            except Exception as e:
+                logger.warning(f"Cookie load error: {e}")
+        resp = session.get(url, headers=headers, cookies=cookies, timeout=25)
+        # If cookies cause 400/403, retry without cookies
+        if resp.status_code in (400, 403, 401):
+            resp = session.get(url, headers=headers, cookies={}, timeout=25)
         resp.raise_for_status()
         html_text = resp.text
         videos = _extract_search_results(html_text, base_domain, url)
