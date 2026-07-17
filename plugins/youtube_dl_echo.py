@@ -100,20 +100,31 @@ def build_video_button_from_result(video_data: dict, task_id: str = ""):
     cb_video = f"profile_vid|{url}".encode("UTF-8")
     return [InlineKeyboardButton(f"🎬 {label[:45]}", callback_data=cb_video)]
 
-def build_pagination_buttons(pagination_info: dict, current_url: str, page_type: str = "page"):
-    """Build Next / Previous pagination buttons."""
+def build_pagination_buttons(pagination_info: dict, current_url: str, page_type: str = "page", user_id: str = None):
+    """Build Next / Previous pagination buttons with short callbacks."""
+    # Save pagination state for user
+    if user_id:
+        pag_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_pagination_state.json")
+        try:
+            with open(pag_path, "w", encoding="utf8") as f:
+                json.dump({
+                    "prev_url": pagination_info.get("prev"),
+                    "next_url": pagination_info.get("next"),
+                    "original_url": current_url,
+                    "type": page_type,
+                }, f)
+        except Exception:
+            pass
     buttons = []
     row = []
     if pagination_info.get("prev"):
-        prev_url = pagination_info["prev"]
-        row.append(InlineKeyboardButton("◀️ Previous", callback_data=f"page_nav|prev|{prev_url}".encode("UTF-8")))
+        row.append(InlineKeyboardButton("◀️ Previous", callback_data=b"page_nav|prev"))
     if pagination_info.get("next"):
-        next_url = pagination_info["next"]
-        row.append(InlineKeyboardButton("▶️ Next", callback_data=f"page_nav|next|{next_url}".encode("UTF-8")))
+        row.append(InlineKeyboardButton("▶️ Next", callback_data=b"page_nav|next"))
     if row:
         buttons.append(row)
-    # Also add a "Refresh / Back" button
-    buttons.append([InlineKeyboardButton("🔄 Refresh Page", callback_data=f"page_refresh|{current_url}".encode("UTF-8"))])
+    # Refresh uses current URL saved separately
+    buttons.append([InlineKeyboardButton("🔄 Refresh Page", callback_data=b"page_refresh")])
     return InlineKeyboardMarkup(buttons)
 
 def build_profile_keyboard(results: dict, user_id: str = None):
@@ -139,36 +150,48 @@ def build_profile_keyboard(results: dict, user_id: str = None):
         ))
         keyboard.append(btn_row)
     
-    # Sort + Download All top buttons
+    # Save current URL/state for sort/download (short callbacks)
+    if user_id and results.get('original_url'):
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        try:
+            with open(state_path, "w", encoding="utf8") as f:
+                json.dump({"url": results.get('original_url'), "type": "profile"}, f)
+        except Exception:
+            pass
+    # Sort + Download All top buttons (short callbacks)
     sort_download_rows = []
     sort_download_rows.append([
-        InlineKeyboardButton("📊 Longest", callback_data=f"sort_vid|longest|{results.get('original_url', '')}".encode("UTF-8")),
-        InlineKeyboardButton("📊 Shortest", callback_data=f"sort_vid|shortest|{results.get('original_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("📊 Longest", callback_data=b"sort_vid|longest"),
+        InlineKeyboardButton("📊 Shortest", callback_data=b"sort_vid|shortest"),
     ])
     sort_download_rows.append([
-        InlineKeyboardButton("🔽 Download All", callback_data=f"download_all|{results.get('original_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("🔽 Download All", callback_data=b"download_all"),
     ])
-    # Prepend sort/download rows at top
     keyboard = sort_download_rows + keyboard
     
     # Add pagination if available
-    if pagination.get("next") or pagination.get("prev"):
-        pagination_buttons = build_pagination_buttons(pagination, results.get("original_url", ""), "profile")
-        # Append pagination row to keyboard manually (simpler approach: return combined)
-        # Since pagination_buttons is InlineKeyboardMarkup, we'll rebuild
-        pass
+    # Save refresh URL for profile
+    if results.get('original_url') and user_id:
+        refresh_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        try:
+            with open(refresh_path, "w", encoding="utf8") as f:
+                json.dump({"url": results.get('original_url'), "type": "profile"}, f)
+        except Exception:
+            pass
     
-    # For simplicity: add pagination buttons as last rows
+    # Pagination (short callbacks)
     pagination_rows = []
-    if pagination.get("prev"):
-        pagination_rows.append(InlineKeyboardButton("◀️ Previous", callback_data=f"page_nav|prev|{pagination['prev']}".encode("UTF-8")))
-    if pagination.get("next"):
-        pagination_rows.append(InlineKeyboardButton("▶️ Next", callback_data=f"page_nav|next|{pagination['next']}".encode("UTF-8")))
+    if pagination.get("prev") or pagination.get("next"):
+        # Build pagination buttons with user_id so state is saved
+        pag_buttons = build_pagination_buttons(pagination, results.get('original_url', ''), 'profile', user_id)
+        # pag_buttons is InlineKeyboardMarkup; append its rows
+        for row in pag_buttons.inline_keyboard:
+            pagination_rows.extend(row)
     if pagination_rows:
-        keyboard.append(pagination_rows)
+        keyboard.extend(pagination_rows)
     
-    # Add refresh
-    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data=f"profile_refresh|{results.get('original_url')}".encode("UTF-8"))])
+    # Refresh (short callback)
+    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data=b"profile_refresh")])
     
     return InlineKeyboardMarkup(keyboard)
 
@@ -190,26 +213,43 @@ def build_search_keyboard(results: dict, user_id: str = None):
             callback_data=f"profile_vid|{idx}".encode("UTF-8")
         )])
     
-    # Sort + Download All top buttons
+    # Save current URL for sort/download (short callbacks)
+    if user_id and results.get('search_url'):
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        try:
+            with open(state_path, "w", encoding="utf8") as f:
+                json.dump({"url": results.get('search_url'), "type": "search"}, f)
+        except Exception:
+            pass
+    # Sort + Download All top buttons (short callbacks)
     sort_download_rows = []
     sort_download_rows.append([
-        InlineKeyboardButton("📊 Longest", callback_data=f"sort_vid|longest|{results.get('search_url', '')}".encode("UTF-8")),
-        InlineKeyboardButton("📊 Shortest", callback_data=f"sort_vid|shortest|{results.get('search_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("📊 Longest", callback_data=b"sort_vid|longest"),
+        InlineKeyboardButton("📊 Shortest", callback_data=b"sort_vid|shortest"),
     ])
     sort_download_rows.append([
-        InlineKeyboardButton("🔽 Download All", callback_data=f"download_all|{results.get('search_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("🔽 Download All", callback_data=b"download_all"),
     ])
     keyboard = sort_download_rows + keyboard
     
     # Pagination
     pag_rows = []
+    if pagination.get("prev") or pagination.get("next"):
+        # Save pagination state for search
+        if user_id:
+            pag_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_pagination_state.json")
+            try:
+                with open(pag_path, "w", encoding="utf8") as f:
+                    json.dump({"prev_url": pagination.get("prev"), "next_url": pagination.get("next"), "original_url": results.get('search_url'), "type": "search"}, f)
+            except Exception:
+                pass
     if pagination.get("prev"):
-        pag_rows.append(InlineKeyboardButton("◀️ Prev", callback_data=f"page_nav|prev|{pagination['prev']}".encode("UTF-8")))
+        pag_rows.append(InlineKeyboardButton("◀️ Prev", callback_data=b"page_nav|prev"))
     if pagination.get("next"):
-        pag_rows.append(InlineKeyboardButton("▶️ Next", callback_data=f"page_nav|next|{pagination['next']}".encode("UTF-8")))
+        pag_rows.append(InlineKeyboardButton("▶️ Next", callback_data=b"page_nav|next"))
     if pag_rows:
         keyboard.append(pag_rows)
-    keyboard.append([InlineKeyboardButton("🔄 Refresh Search", callback_data=f"search_refresh|{results.get('search_url')}".encode("UTF-8"))])
+    keyboard.append([InlineKeyboardButton("🔄 Refresh Search", callback_data=b"search_refresh")])
     return InlineKeyboardMarkup(keyboard)
 
 def build_page_keyboard(results: dict, user_id: str = None):
@@ -230,26 +270,42 @@ def build_page_keyboard(results: dict, user_id: str = None):
             f"🎬 {video.get('label', video.get('title', 'Video'))[:40]}",
             callback_data=f"profile_vid|{idx}".encode("UTF-8")
         )])
-    # Sort + Download All top buttons
+    # Save current URL/state for sort/download (short callbacks)
+    if user_id and results.get('original_url'):
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        try:
+            with open(state_path, "w", encoding="utf8") as f:
+                json.dump({"url": results.get('original_url'), "type": "profile"}, f)
+        except Exception:
+            pass
+    # Sort + Download All top buttons (short callbacks)
     sort_download_rows = []
     sort_download_rows.append([
-        InlineKeyboardButton("📊 Longest", callback_data=f"sort_vid|longest|{results.get('original_url', '')}".encode("UTF-8")),
-        InlineKeyboardButton("📊 Shortest", callback_data=f"sort_vid|shortest|{results.get('original_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("📊 Longest", callback_data=b"sort_vid|longest"),
+        InlineKeyboardButton("📊 Shortest", callback_data=b"sort_vid|shortest"),
     ])
     sort_download_rows.append([
-        InlineKeyboardButton("🔽 Download All", callback_data=f"download_all|{results.get('original_url', '')}".encode("UTF-8")),
+        InlineKeyboardButton("🔽 Download All", callback_data=b"download_all"),
     ])
-    # Prepend sort/download rows at top
     keyboard = sort_download_rows + keyboard
     
     pag_rows = []
+    if pagination.get("prev") or pagination.get("next"):
+        # Save pagination state for search
+        if user_id:
+            pag_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_pagination_state.json")
+            try:
+                with open(pag_path, "w", encoding="utf8") as f:
+                    json.dump({"prev_url": pagination.get("prev"), "next_url": pagination.get("next"), "original_url": results.get('search_url'), "type": "search"}, f)
+            except Exception:
+                pass
     if pagination.get("prev"):
-        pag_rows.append(InlineKeyboardButton("◀️ Prev", callback_data=f"page_nav|prev|{pagination['prev']}".encode("UTF-8")))
+        pag_rows.append(InlineKeyboardButton("◀️ Prev", callback_data=b"page_nav|prev"))
     if pagination.get("next"):
-        pag_rows.append(InlineKeyboardButton("▶️ Next", callback_data=f"page_nav|next|{pagination['next']}".encode("UTF-8")))
+        pag_rows.append(InlineKeyboardButton("▶️ Next", callback_data=b"page_nav|next"))
     if pag_rows:
         keyboard.append(pag_rows)
-    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data=f"page_refresh|{results.get('original_url')}".encode("UTF-8"))])
+    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data=b"page_refresh")])
     return InlineKeyboardMarkup(keyboard)
 
 # ============================================================
@@ -1018,6 +1074,19 @@ async def pagination_callback(bot, update):
         direction = parts[1] if len(parts) > 1 else "next"
         nav_url = parts[2] if len(parts) > 2 else None
         
+        user_id = update.from_user.id
+        pag_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_pagination_state.json")
+        pagination_state = {}
+        try:
+            if os.path.exists(pag_path):
+                with open(pag_path, "r", encoding="utf8") as f:
+                    pagination_state = json.load(f)
+        except Exception:
+            pass
+        # Use saved pagination URLs (prev/next) from file
+        nav_url = pagination_state.get("prev_url") if direction == "prev" else pagination_state.get("next_url")
+        nav_type = pagination_state.get("type", "page")
+        
         if nav_url and (direction == "next" or direction == "prev"):
             await bot.answer_callback_query(update.id, "Loading page...", show_alert=False)
             # Re-run page scraping for new URL
@@ -1025,11 +1094,11 @@ async def pagination_callback(bot, update):
             # Send new message with new results
             try:
                 # Detect profile vs page vs search for pagination
-                if is_xhamster_profile(nav_url):
+                if nav_type == "profile" or is_xhamster_profile(nav_url):
                     result = await scrape_profile(nav_url, "cookies.txt" if os.path.exists("cookies.txt") else None)
                     keyboard_builder = build_profile_keyboard
                     text_prefix = "🎯 Profile Results"
-                elif is_xhamster_search(nav_url) or "/search/" in nav_url:
+                elif nav_type == "search" or "/search/" in nav_url:
                     result = await search_videos(nav_url, cookies_path="cookies.txt" if os.path.exists("cookies.txt") else None)
                     keyboard_builder = build_search_keyboard
                     text_prefix = "🔍 Search Results"
@@ -1073,7 +1142,21 @@ async def pagination_callback(bot, update):
 @BimboBot.on_callback_query(filters.regex(r"profile_refresh\|"))
 async def profile_refresh_callback(bot, update):
     try:
-        url = update.data.decode("utf-8").split("|", 1)[1]
+        user_id = update.from_user.id
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        url = ""
+        url_type = "profile"
+        try:
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf8") as f:
+                    state_data = json.load(f)
+                url = state_data.get("url", "")
+                url_type = state_data.get("type", "profile")
+        except Exception:
+            pass
+        # Fallback: try to extract from callback (should be empty now)
+        if not url:
+            url = update.data.decode("utf-8").split("|", 1)[1] if "|" in update.data.decode("utf-8") else ""
         await bot.answer_callback_query(update.id, "Refreshing profile...", show_alert=False)
         await update.message.delete(True)
         result = await scrape_profile(url, "cookies.txt" if os.path.exists("cookies.txt") else None)
@@ -1097,7 +1180,20 @@ async def profile_refresh_callback(bot, update):
 @BimboBot.on_callback_query(filters.regex(r"search_refresh\|"))
 async def search_refresh_callback(bot, update):
     try:
-        url = update.data.decode("utf-8").split("|", 1)[1]
+        user_id = update.from_user.id
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        url = ""
+        url_type = "search"
+        try:
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf8") as f:
+                    state_data = json.load(f)
+                url = state_data.get("url", "")
+                url_type = state_data.get("type", "search")
+        except Exception:
+            pass
+        if not url:
+            url = update.data.decode("utf-8").split("|", 1)[1] if "|" in update.data.decode("utf-8") else ""
         await bot.answer_callback_query(update.id, "Refreshing search...", show_alert=False)
         await update.message.delete(True)
         # Note: url is search_url. We need to extract query from it.
@@ -1113,7 +1209,20 @@ async def search_refresh_callback(bot, update):
 @BimboBot.on_callback_query(filters.regex(r"page_refresh\|"))
 async def page_refresh_callback(bot, update):
     try:
-        url = update.data.decode("utf-8").split("|", 1)[1]
+        user_id = update.from_user.id
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        url = ""
+        url_type = "page"
+        try:
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf8") as f:
+                    state_data = json.load(f)
+                url = state_data.get("url", "")
+                url_type = state_data.get("type", "page")
+        except Exception:
+            pass
+        if not url:
+            url = update.data.decode("utf-8").split("|", 1)[1] if "|" in update.data.decode("utf-8") else ""
         await bot.answer_callback_query(update.id, "Refreshing page...", show_alert=False)
         await update.message.delete(True)
         result = await scrape_page(url, "cookies.txt" if os.path.exists("cookies.txt") else None)
@@ -1140,9 +1249,20 @@ async def page_refresh_callback(bot, update):
 @BimboBot.on_callback_query(filters.regex(r"sort_vid\|"))
 async def sort_video_callback(bot, update):
     try:
+        user_id = update.from_user.id
+        state_path = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION if hasattr(Config, 'BIMBO_DOWNLOAD_LOCATION') else "/tmp", f"{user_id}_current_state.json")
+        url_ref = ""
+        url_type = "profile"
+        try:
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf8") as f:
+                    state_data = json.load(f)
+                url_ref = state_data.get("url", "")
+                url_type = state_data.get("type", "profile")
+        except Exception:
+            pass
         parts = update.data.decode("utf-8").split("|")
         sort_type = parts[1] if len(parts) > 1 else "longest"
-        url_ref = parts[2] if len(parts) > 2 else ""
         await bot.answer_callback_query(update.id, f"Sorting {sort_type}...", show_alert=False)
         # Reload mapping for profile/search/page based on current context
         # For simplicity, we rely on the existing mapping file (if any) or refresh
@@ -1157,7 +1277,8 @@ async def sort_video_callback(bot, update):
 @BimboBot.on_callback_query(filters.regex(r"download_all\|"))
 async def download_all_callback(bot, update):
     try:
-        url_ref = update.data.decode("utf-8").split("|", 1)[1]
+        # Download all uses saved video mapping files; no long URL needed
+        url_ref = ""
         await bot.answer_callback_query(update.id, "Starting Download All...", show_alert=False)
         # Get videos from mapping files
         user_id = update.from_user.id
