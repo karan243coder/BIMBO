@@ -550,6 +550,40 @@ async def echo(bot, update):
                 )
                 return
             else:
+                # FALLBACK: Try engine directly if scraping fails
+                try:
+                    cookies_path = "cookies.txt" if os.path.exists("cookies.txt") else None
+                    loop = asyncio.get_event_loop()
+                    xh = await loop.run_in_executor(None, xh_extract, url, cookies_path)
+                    if xh and xh.get("qualities"):
+                        await imog.delete(True)
+                        xh_json = {
+                            "title": xh.get("title") or "xHamster video",
+                            "fulltitle": xh.get("title") or "xHamster video",
+                            "duration": xh.get("duration"),
+                            "_xhamster": True,
+                            "xh_qualities": {str(q["height"]): q["m3u8"] for q in xh["qualities"]},
+                            "xh_headers": xh.get("headers") or {},
+                        }
+                        os.makedirs(Config.BIMBO_DOWNLOAD_LOCATION, exist_ok=True)
+                        save_path_json = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION, f"{update.from_user.id}.json")
+                        with open(save_path_json, "w", encoding="utf8") as f:
+                            json.dump(xh_json, f, ensure_ascii=False)
+                        await bot.send_message(
+                            chat_id=update.chat.id,
+                            text=(
+                                " **🎯 Profile - Direct Engine (Fallback)**\\n"
+                                f" **📊 Source:** `{url}`\\n"
+                                f" **✅ xHamster engine active**"
+                            ),
+                            reply_markup=build_xhamster_keyboard_from_engine(xh),
+                            parse_mode=enums.ParseMode.HTML,
+                            reply_to_message_id=update.id,
+                        )
+                        return
+                except Exception as fallback_e:
+                    logger.warning(f"Profile fallback engine error: {fallback_e}")
+                
                 await imog.edit(
                     " **❌ Profile found but no videos scraped.**\\n"
                     "Profile may be private, deleted, or region-blocked.\\n"
@@ -596,6 +630,40 @@ async def echo(bot, update):
                 )
                 return
             else:
+                # FALLBACK: Try engine directly if scraping fails
+                try:
+                    cookies_path = "cookies.txt" if os.path.exists("cookies.txt") else None
+                    loop = asyncio.get_event_loop()
+                    xh = await loop.run_in_executor(None, xh_extract, url, cookies_path)
+                    if xh and xh.get("qualities"):
+                        await imog.delete(True)
+                        xh_json = {
+                            "title": xh.get("title") or "xHamster video",
+                            "fulltitle": xh.get("title") or "xHamster video",
+                            "duration": xh.get("duration"),
+                            "_xhamster": True,
+                            "xh_qualities": {str(q["height"]): q["m3u8"] for q in xh["qualities"]},
+                            "xh_headers": xh.get("headers") or {},
+                        }
+                        os.makedirs(Config.BIMBO_DOWNLOAD_LOCATION, exist_ok=True)
+                        save_path_json = os.path.join(Config.BIMBO_DOWNLOAD_LOCATION, f"{update.from_user.id}.json")
+                        with open(save_path_json, "w", encoding="utf8") as f:
+                            json.dump(xh_json, f, ensure_ascii=False)
+                        await bot.send_message(
+                            chat_id=update.chat.id,
+                            text=(
+                                " **🎯 Page - Direct Engine (Fallback)**\\n"
+                                f" **📊 Source:** `{url}`\\n"
+                                f" **✅ xHamster engine active**"
+                            ),
+                            reply_markup=build_xhamster_keyboard_from_engine(xh),
+                            parse_mode=enums.ParseMode.HTML,
+                            reply_to_message_id=update.id,
+                        )
+                        return
+                except Exception as fallback_e:
+                    logger.warning(f"Page fallback engine error: {fallback_e}")
+                
                 await imog.edit(
                     " **❌ Page found but no videos scraped.**\\n"
                     "Page may be empty or region-blocked.",
